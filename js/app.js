@@ -3,18 +3,42 @@ let selected;
 
 const $ = x => document.getElementById(x);
 
+/*
+  مسارات الصور:
+  GitHub Pages:
+  /fitaro/public/suits/navy.jpg
+
+  Vercel:
+  /suits/navy.jpg
+*/
 function imagePath(image) {
-  // GitHub Pages
-  if (location.hostname.includes("github.io")) {
-    return "/fitaro/public/" + image;
+  if (!image) return "";
+
+  // تنظيف المسار مهما كان مكتوب في products.js
+  let clean = String(image)
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .replace(/^\/+/, "")
+    .replace(/^fitaro\/public\//i, "")
+    .replace(/^fitaro\//i, "")
+    .replace(/^public\//i, "");
+
+  // لو المسار بدأ بـ suits/ نتركه كما هو
+  if (!clean.startsWith("suits/")) {
+    clean = "suits/" + clean;
   }
 
-  // Vercel / أي استضافة يكون فيها public هو الجذر
-  return "/" + image;
+  // GitHub Pages
+  if (location.hostname.includes("github.io")) {
+    return "/fitaro/public/" + clean;
+  }
+
+  // Vercel وأي استضافة يكون public فيها هو الجذر
+  return "/" + clean;
 }
 
 async function init() {
   selected = products[0];
+
   render();
 
   if (location.protocol === "file:") {
@@ -23,9 +47,21 @@ async function init() {
 }
 
 function render() {
-  $("suits").innerHTML = products.map(p => `
-    <article class="suit ${p.id === selected.id ? "active" : ""}" data-id="${p.id}">
-      <img src="${imagePath(p.image)}" alt="${p.name}">
+  const suits = $("suits");
+
+  if (!suits) return;
+
+  suits.innerHTML = products.map(p => `
+    <article
+      class="suit ${p.id === selected.id ? "active" : ""}"
+      data-id="${p.id}"
+    >
+      <img
+        src="${imagePath(p.image)}"
+        alt="${p.name}"
+        onerror="this.style.display='none';"
+      >
+
       <b>${p.name}</b>
       <small>${p.fit}</small>
     </article>
@@ -39,58 +75,68 @@ function render() {
   });
 }
 
-$("person").onchange = e => {
-  const f = e.target.files[0];
+if ($("person")) {
+  $("person").onchange = e => {
+    const f = e.target.files[0];
 
-  if (f) {
-    $("preview").src = URL.createObjectURL(f);
-    $("preview").style.display = "block";
-  }
-};
+    if (f) {
+      $("preview").src = URL.createObjectURL(f);
+      $("preview").style.display = "block";
+    }
+  };
+}
 
 function err(t) {
+  if (!$("error")) return;
+
   $("error").textContent = t;
   $("error").classList.remove("hidden");
 }
 
 function clear() {
-  $("error").classList.add("hidden");
+  if ($("error")) {
+    $("error").classList.add("hidden");
+  }
 }
 
-$("recommend").onclick = async () => {
-  clear();
+if ($("recommend")) {
+  $("recommend").onclick = async () => {
+    clear();
 
-  try {
-    const r = await fetch("api/recommend", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        gender: $("gender").value,
-        height: +$("height").value,
-        weight: +$("weight").value,
-        occasion: $("occasion").value,
-        products
-      })
-    });
+    try {
+      const r = await fetch("api/recommend", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          gender: $("gender").value,
+          height: +$("height").value,
+          weight: +$("weight").value,
+          occasion: $("occasion").value,
+          products
+        })
+      });
 
-    const d = await r.json();
+      const d = await r.json();
 
-    if (!r.ok) throw Error(d.error);
+      if (!r.ok) {
+        throw Error(d.error || "حدث خطأ في التوصية");
+      }
 
-    $("rec").innerHTML = `
-      <b>${d.headline}</b><br>
-      المقاس: <strong>${d.size}</strong> — ${d.fit}<br>
-      ${d.text}
-    `;
+      $("rec").innerHTML = `
+        <b>${d.headline}</b><br>
+        المقاس: <strong>${d.size}</strong> — ${d.fit}<br>
+        ${d.text}
+      `;
 
-    $("rec").classList.remove("hidden");
+      $("rec").classList.remove("hidden");
 
-  } catch (e) {
-    err(e.message);
-  }
-};
+    } catch (e) {
+      err(e.message);
+    }
+  };
+}
 
 async function tryon() {
   clear();
@@ -123,7 +169,7 @@ async function tryon() {
     const d = await r.json();
 
     if (!r.ok || !d.success) {
-      throw Error(d.error);
+      throw Error(d.error || "حدث خطأ أثناء تجربة البدلة");
     }
 
     $("result").src = d.imageUrl;
@@ -177,69 +223,81 @@ function resize(file) {
       }, "image/jpeg", 0.82);
     };
 
-    i.onerror = () => no(Error("الصورة غير صالحة"));
+    i.onerror = () => {
+      URL.revokeObjectURL(u);
+      no(Error("الصورة غير صالحة"));
+    };
 
     i.src = u;
   });
 }
 
-$("tryon").onclick = tryon;
-$("again").onclick = tryon;
+if ($("tryon")) {
+  $("tryon").onclick = tryon;
+}
 
-$("send").onclick = async () => {
+if ($("again")) {
+  $("again").onclick = tryon;
+}
 
-  const q = $("question").value.trim();
+if ($("send")) {
+  $("send").onclick = async () => {
 
-  if (!q) return;
+    const q = $("question").value.trim();
 
-  $("messages").innerHTML += `
-    <div class="bubble user">${esc(q)}</div>
-  `;
-
-  $("question").value = "";
-
-  try {
-
-    const ms = [
-      ...document.querySelectorAll("#messages .bubble")
-    ].map(b => ({
-      role: b.classList.contains("user")
-        ? "user"
-        : "assistant",
-      content: b.textContent
-    }));
-
-    const r = await fetch("api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        messages: ms,
-        products
-      })
-    });
-
-    const d = await r.json();
-
-    if (!r.ok) throw Error(d.error);
+    if (!q) return;
 
     $("messages").innerHTML += `
-      <div class="bubble ai">${esc(d.text)}</div>
+      <div class="bubble user">${esc(q)}</div>
     `;
 
-  } catch (e) {
+    $("question").value = "";
 
-    $("messages").innerHTML += `
-      <div class="bubble ai">
-        حصلت مشكلة: ${esc(e.message)}
-      </div>
-    `;
-  }
-};
+    try {
+
+      const ms = [
+        ...document.querySelectorAll("#messages .bubble")
+      ].map(b => ({
+        role: b.classList.contains("user")
+          ? "user"
+          : "assistant",
+        content: b.textContent
+      }));
+
+      const r = await fetch("api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          messages: ms,
+          products
+        })
+      });
+
+      const d = await r.json();
+
+      if (!r.ok) {
+        throw Error(d.error || "حدث خطأ في المساعد");
+      }
+
+      $("messages").innerHTML += `
+        <div class="bubble ai">${esc(d.text)}</div>
+      `;
+
+    } catch (e) {
+
+      $("messages").innerHTML += `
+        <div class="bubble ai">
+          حصلت مشكلة: ${esc(e.message)}
+        </div>
+      `;
+    }
+  };
+}
 
 function esc(s) {
-  return s.replace(
+  return String(s).replace(
     /[&<>"']/g,
     m => ({
       "&": "&amp;",
